@@ -4,3 +4,6 @@ matchwords.txt
 __pycache__/*
 *.db
 ttnconfig/*
+build
+dist
+trackthenews.egg-info

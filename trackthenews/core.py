@@ -428,6 +428,7 @@ def main():
 
         for counter, article in enumerate(deduped, 1):
             # aquire exclusive access here since changes are commited later int he loop
+            conn.isolation_level = None
             conn.execute('BEGIN EXCLUSIVE')
 
             print('Checking {} article {}/{}'.format(
