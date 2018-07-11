@@ -1,7 +1,6 @@
 # Parses a collection of news outlet RSS feeds for recently published articles,
 # then converts those articles to plaintext and searches them for mentions of
 # given words or phrases, and posts the results to Twitter.
-
 from __future__ import unicode_literals
 
 import argparse
@@ -12,19 +11,12 @@ import sqlite3
 import time
 import textwrap
 import sys
-
-from datetime import datetime
-from io import BytesIO
-from builtins import input
-
-import feedparser
-import html2text
-import requests
 import yaml
+import feedparser
 
-from bs4 import BeautifulSoup
-from PIL import Image, ImageDraw, ImageFont
-from readability import Document
+from .article import Article
+from datetime import datetime
+from builtins import input
 from twython import Twython, TwythonError
 
 # TODO: add/remove RSS feeds from within the script.
@@ -32,91 +24,6 @@ from twython import Twython, TwythonError
 # TODO: add support for additional parsers beyond readability
 # readability doesn't work very well on NYT, which requires something custom
 # TODO: add other forms of output beyond a Twitter bot
-
-class Article:
-    def __init__(self, outlet, title, url, delicate=False, redirects=False):
-        self.outlet = outlet
-        self.title = title
-        self.url = url
-        self.delicate = delicate
-        self.redirects = redirects
-        self.canonicalize_url()
-
-        self.matching_grafs = []
-        self.imgs = []
-        self.tweeted = False
-
-    def canonicalize_url(self):
-        """Process article URL to produce something roughly canonical."""
-        # These outlets use redirect links in their RSS feeds.
-        # Follow those links, then store only the final destination.
-        if self.redirects:
-            res = requests.head(self.url, allow_redirects=True, timeout=30)
-            self.url = res.headers['location'] if 'location' in res.headers \
-                else res.url
-
-        # Some outlets' URLs don't play well with modifications, so those we 
-        # store crufty. Otherwise, decruft with extreme prejudice.
-        if not self.delicate:
-            self.url = decruft_url(self.url)
-
-    def clean(self):
-        """Download the article and strip it of HTML formatting."""
-        self.res = requests.get(self.url, headers={'User-Agent':ua}, timeout=30)
-        doc = Document(self.res.text)
-
-        h = html2text.HTML2Text()
-        h.ignore_links = True
-        h.ignore_emphasis = True
-        h.ignore_images = True
-        h.body_width = 0
-
-        self.plaintext = h.handle(doc.summary())
-
-    def check_for_matches(self):
-        """
-        Clean up an article, check it against a block list, then for matches.
-        """
-        self.clean()
-        plaintext_grafs = self.plaintext.split('\n')
-
-        if blocklist_loaded and blocklist.check(self):
-            pass
-        else:
-            for graf in plaintext_grafs:
-                if (any(word.lower() in graf.lower() for word in matchwords) or \
-                    any(word in graf for word in matchwords_case_sensitive)):
-                    self.matching_grafs.append(graf)
-
-    def tweet(self):
-        """Send images to be rendered and tweet them with a text status."""
-        square = False if len(self.matching_grafs) == 1 else True
-        for graf in self.matching_grafs[:4]:
-            self.imgs.append(render_img(graf, square=square))
-
-        twitter = get_twitter_instance()
-
-        media_ids = []
-
-        for img in self.imgs:
-            try:
-                img_io = BytesIO()
-                img.save(img_io, format='jpeg', quality=95)
-                img_io.seek(0)
-                res = twitter.upload_media(media=img_io)
-
-                media_ids.append(res['media_id'])
-            except TwythonError:
-                pass
-
-        source = self.outlet + ": " if self.outlet else ''
-
-        status = "{}{} {}".format(source, self.title, self.url)
-        twitter.update_status(status=status, media_ids=media_ids)
-        print(status)
-
-        self.tweeted = True
-
 
 def get_twitter_instance():
     """Return an authenticated twitter instance."""
